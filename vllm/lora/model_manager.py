@@ -3,6 +3,7 @@
 
 import math
 from collections.abc import Callable
+from contextlib import AbstractContextManager, nullcontext
 from typing import TypeVar
 
 import torch
@@ -17,6 +18,7 @@ from vllm.lora.layers import (
     ClassificationHeadWithLoRA,
     FusedMoE3DWithLoRA,
     FusedMoEWithLoRA,
+    LogitsProcessorWithLoRA,
     LoRAMapping,
     LoRAMappingType,
     TokenClassificationHeadWithLoRA,
@@ -812,6 +814,12 @@ class LoRAModelManager:
             self.packed_modules_mapping,
         )
 
+    def token_logits_rows(self, start: int, end: int) -> AbstractContextManager:
+        for module in self.modules.values():
+            if isinstance(module, LogitsProcessorWithLoRA):
+                return module.punica_wrapper.token_logits_rows(start, end)
+        return nullcontext()
+
     def _get_punica_wrapper(self, module_name: str) -> PunicaWrapperBase | None:
         """Determine whether this module supports LoRA and which wrapper to use."""
         # For language model (early return)
@@ -852,6 +860,27 @@ class LoRAModelManager:
             # sub-module list to this rank's owned experts so pack_moe
             # produces a tensor sized to local_num_experts directly.
             packed_module_names = new_module_names
+            if module_name.endswith(".in_proj_qkvz"):
+                prefix = module_name.removesuffix("in_proj_qkvz")
+                slices = ("in_proj_q", "in_proj_k", "in_proj_v")
+                fused = lora_model.loras.get(prefix + "in_proj_qkv")
+                separate = any(prefix + name in lora_model.loras for name in slices)
+                if fused is not None and separate:
+                    raise ValueError("Conflicting fused and split QKV LoRA weights")
+                if fused is not None:
+                    sizes = self.modules[module_name].output_sizes[:3]
+                    for name, weights in zip(
+                        slices, fused.lora_b.split(sizes, dim=0), strict=True
+                    ):
+                        lora_model.loras[prefix + name] = LoRALayerWeights(
+                            prefix + name,
+                            fused.rank,
+                            fused.lora_alpha,
+                            fused.lora_a.clone(),
+                            weights.clone(),
+                            fused.scaling,
+                        )
+                new_module_names = new_module_names[:4]
             if module_name.endswith(".experts"):
                 new_module_names = self._restrict_to_local_experts(
                     module_name, new_module_names

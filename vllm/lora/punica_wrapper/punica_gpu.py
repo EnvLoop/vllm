@@ -6,6 +6,8 @@ Punica: Multi-Tenant LoRA Serving.
 https://arxiv.org/abs/2310.18547
 """
 
+from collections.abc import Iterator
+from contextlib import contextmanager
 from typing import Any, final
 
 import torch
@@ -87,6 +89,21 @@ class PunicaWrapperGPU(PunicaWrapperBase):
             # Prepare cuda kernel metadata tensors
             self.token_mapping_meta.prepare_tensors(self.token_lora_indices)
             self.prompt_mapping_meta.prepare_tensors(self.sampler_indices)
+
+    @contextmanager
+    def token_logits_rows(self, start: int, end: int) -> Iterator[None]:
+        if start < 0 or end < start or end > self.indices_len[0]:
+            raise ValueError("Invalid batch token logits range")
+        previous = getattr(self, "_logits_token_range", None)
+        self._logits_token_range = (start, end)
+        try:
+            with gpu_sync_allowed():
+                self.prompt_mapping_meta.prepare_tensors(self.sampler_indices)
+            yield
+        finally:
+            self._logits_token_range = previous
+            with gpu_sync_allowed():
+                self.prompt_mapping_meta.prepare_tensors(self.sampler_indices)
 
     def add_shrink(
         self,

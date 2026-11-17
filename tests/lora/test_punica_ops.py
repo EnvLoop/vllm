@@ -17,6 +17,39 @@ from .utils import PunicaTensors, assert_close, generate_data_for_nslices
 
 DEVICE_TYPE = current_platform.device_type
 
+
+def test_prompt_logits_mapping_restores_sampled_rows_after_nested_failure():
+    from vllm.config.lora import LoRAConfig
+    from vllm.lora.layers import LoRAMapping
+    from vllm.lora.punica_wrapper.punica_gpu import PunicaWrapperGPU
+
+    wrapper = PunicaWrapperGPU(
+        max_num_batched_tokens=16,
+        max_batches=4,
+        device=f"{DEVICE_TYPE}:0",
+        lora_config=LoRAConfig(max_loras=2),
+    )
+    wrapper.update_metadata(
+        LoRAMapping((1, 1, 2, 2, 2), (1, 2), is_prefill=True),
+        [1, 2, None],
+        3,
+        128,
+    )
+    sampled = wrapper.sampler_indices.clone()
+    with wrapper.token_logits_rows(1, 5):
+        assert torch.equal(wrapper.sampler_indices, wrapper.token_lora_indices[1:5])
+        with (
+            pytest.raises(RuntimeError, match="interrupted"),
+            wrapper.token_logits_rows(2, 3),
+        ):
+            assert torch.equal(wrapper.sampler_indices, wrapper.token_lora_indices[2:3])
+            raise RuntimeError("interrupted")
+        assert torch.equal(wrapper.sampler_indices, wrapper.token_lora_indices[1:5])
+    assert torch.equal(wrapper.sampler_indices, sampled)
+    with pytest.raises(ValueError, match="range"), wrapper.token_logits_rows(0, 6):
+        pytest.fail("Out-of-range token logits mapping was accepted")
+
+
 # On XPU, oneDNN/oneMKL can return wrong results for these reference matmuls
 # after many Triton kernel launches, so the reference stays on CPU there.
 _REF_ON_CPU = current_platform.is_xpu()
