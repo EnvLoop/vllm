@@ -307,7 +307,7 @@ def compute_prompt_logprobs_with_chunking(
     logits_mode = logprobs_mode in ("raw_logits", "processed_logits")
     prompt_token_ids = prompt_token_ids.to(torch.int64)
     for start_idx in range(0, prompt_token_ids.shape[0], CHUNK_SIZE):
-        end_idx = start_idx + CHUNK_SIZE
+        end_idx = min(start_idx + CHUNK_SIZE, prompt_token_ids.shape[0])
         # NOTE(woosuk): logits_fn can be slow because it involves all-gather.
         with token_logits_rows(start_idx, end_idx):
             prompt_logits = logits_fn(prompt_hidden_states[start_idx:end_idx])

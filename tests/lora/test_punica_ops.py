@@ -18,6 +18,44 @@ from .utils import PunicaTensors, assert_close, generate_data_for_nslices
 DEVICE_TYPE = current_platform.device_type
 
 
+@pytest.mark.parametrize("num_tokens", [3, 1027])
+def test_prompt_logits_chunks_use_the_actual_token_range(num_tokens):
+    from vllm.config.lora import LoRAConfig
+    from vllm.lora.layers import LoRAMapping
+    from vllm.lora.punica_wrapper.punica_gpu import PunicaWrapperGPU
+    from vllm.v1.worker.gpu.sample.prompt_logprob import (
+        compute_prompt_logprobs_with_chunking,
+    )
+
+    wrapper = PunicaWrapperGPU(
+        max_num_batched_tokens=num_tokens,
+        max_batches=2,
+        device=DEVICE_TYPE,
+        lora_config=LoRAConfig(max_loras=2),
+    )
+    wrapper.update_metadata(
+        LoRAMapping((1,) * num_tokens, (1,), is_prefill=True),
+        [1, 2, None],
+        3,
+        4,
+    )
+    hidden = torch.arange(num_tokens * 4, device=DEVICE_TYPE, dtype=torch.float32)
+    hidden = hidden.reshape(num_tokens, 4)
+    tokens = torch.zeros(num_tokens, device=DEVICE_TYPE, dtype=torch.int64)
+
+    def logits(rows):
+        assert wrapper.sampler_indices.shape[0] == rows.shape[0]
+        return rows
+
+    token_ids, scores, ranks = compute_prompt_logprobs_with_chunking(
+        tokens, hidden, logits, 1, token_logits_rows=wrapper.token_logits_rows
+    )
+    assert token_ids.shape == scores.shape == (num_tokens, 2)
+    assert ranks.shape == (num_tokens,)
+    torch.testing.assert_close(scores[:, 0], hidden.log_softmax(-1)[:, 0])
+    assert wrapper.sampler_indices.shape == (1,)
+
+
 def test_prompt_logits_mapping_restores_sampled_rows_after_nested_failure():
     from vllm.config.lora import LoRAConfig
     from vllm.lora.layers import LoRAMapping
