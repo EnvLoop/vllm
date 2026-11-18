@@ -1165,15 +1165,6 @@ class Glm5NextForConditionalGeneration(
     # at load for mixed-precision Quark checkpoints.
     packed_modules_mapping = {
         "gate_up_proj": ["gate_proj", "up_proj"],
-        "fused_qkv_a_proj": ["q_a_proj", "kv_a_proj_with_mqa"],
-        "in_proj_qkvbfg_a": [
-            "q_proj",
-            "k_proj",
-            "v_proj",
-            "b_proj",
-            "f_a_proj",
-            "g_a_proj",
-        ],
     }
 
     # NOTE: weight-prefix mapping is inherited from Glm4vForConditionalGeneration
