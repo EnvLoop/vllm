@@ -83,9 +83,7 @@ def test_qwen3_unembed_lora():
         assert 1 in llm.llm_engine.list_loras(), "lm_head LoRA should be loaded"
 
         # Test generation
-        sampling_params = SamplingParams(
-            temperature=0, max_tokens=32, prompt_logprobs=1
-        )
+        sampling_params = SamplingParams(temperature=0, max_tokens=32)
         prompts = ["Hello, my name is"]
 
         # Generate with base model (no LoRA)
@@ -99,8 +97,3 @@ def test_qwen3_unembed_lora():
         )
         assert len(lora_outputs) == 1
         assert len(lora_outputs[0].outputs[0].text) > 0
-        assert lora_outputs[0].prompt_logprobs is not None
-        assert len(lora_outputs[0].prompt_logprobs) == len(
-            lora_outputs[0].prompt_token_ids
-        )
-        assert lora_outputs[0].prompt_logprobs == base_outputs[0].prompt_logprobs

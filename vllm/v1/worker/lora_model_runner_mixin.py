@@ -3,7 +3,7 @@
 """Define LoRA functionality mixin for model runners."""
 
 from collections.abc import Callable
-from contextlib import AbstractContextManager, contextmanager, nullcontext
+from contextlib import contextmanager, nullcontext
 
 import numpy as np
 import torch
@@ -85,11 +85,6 @@ class LoRAModelRunnerMixin:
             type=mapping_type,
         )
         self.lora_manager.set_active_adapters(lora_requests, lora_mapping)
-
-    def token_logits_rows(self, start: int, end: int) -> AbstractContextManager:
-        if not hasattr(self, "lora_manager"):
-            return nullcontext()
-        return self.lora_manager.token_logits_rows(start, end)
 
     def _ensure_lora_enabled(self) -> None:
         if not hasattr(self, "lora_manager"):
