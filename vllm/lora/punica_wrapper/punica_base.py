@@ -7,6 +7,7 @@ https://arxiv.org/abs/2310.18547
 """
 
 from abc import ABC, abstractmethod
+from contextlib import AbstractContextManager, nullcontext
 from typing import TYPE_CHECKING
 
 import torch
@@ -160,6 +161,13 @@ class PunicaWrapperBase(PunicaWrapperABC):
         self.is_prefill = False
         self.no_lora = False
 
+    def token_logits_rows(self, start: int, end: int) -> AbstractContextManager:
+        if start < 0 or end < start or end > self.indices_len[0]:
+            raise ValueError("Invalid batch token logits range")
+        if not self.no_lora:
+            raise NotImplementedError("Token logits LoRA requires a supported wrapper")
+        return nullcontext()
+
     def _update_base_metadata(
         self,
         mapping: "LoRAMapping",
@@ -264,6 +272,9 @@ class PunicaWrapperBase(PunicaWrapperABC):
         """This property is used to access the lora indices specifically for
         LogitsProcessorWithLoRA.
         """
+        token_range = getattr(self, "_logits_token_range", None)
+        if token_range is not None:
+            return self.token_lora_indices[slice(*token_range)]
         sampler_indices_len = self.indices_len[1]
         return self._sampler_indices[:sampler_indices_len]
 
